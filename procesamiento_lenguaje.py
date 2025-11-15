@@ -18,7 +18,7 @@ from sklearn.metrics import confusion_matrix
 """Carga de datos"""
 #cargar los datos
 def read_dataset():
-    url_dataset = "./data/data_aggressiveness_es.json"
+    url_dataset = "./dataset/dataset_humor_train.json"
     dataset = pd.read_json(url_dataset, lines=True)
     #conteo de clases
     print("Total de ejemplos de entrenamiento")
@@ -27,6 +27,8 @@ def read_dataset():
     X = dataset['text'].to_numpy()
     # Extracción de las etiquetas o clases de entrenamiento
     Y = dataset['klass'].to_numpy()
+    # Estracción de kis ID (Aún no usado).
+    # ID = dataset['id'].to_numpy()
     return X,Y
 
 """Normalización de datos"""
@@ -386,7 +388,7 @@ def evaluacion(X_test,vec_tfidf,Y_test,model):
 """Main"""
 """Recopilamos las funciones para crear poder entrenar nuestra red neuronal"""
 if __name__ == "__main__":
-    print("Empesando el entrenamiento....")
+    print("Empesando el entrenamiento....   ")
     # Leemos los datos del dataset.
     X, Y = read_dataset()
 
