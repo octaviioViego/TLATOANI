@@ -10,4 +10,4 @@
 
 # Autores
 - Fernando Octavio Arroyo Velasco
-- Juan Alberto Granados
+- Juan Alberto Granados Ramírez
