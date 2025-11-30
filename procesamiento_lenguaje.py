@@ -14,11 +14,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder
+
+
 
 """Carga de datos"""
 #cargar los datos
 def read_dataset():
-    url_dataset = "./dataset/dataset_humor_train.json"
+    url_dataset = "./dataset/dataset_polaridad_es.json"
     dataset = pd.read_json(url_dataset, lines=True)
     #conteo de clases
     print("Total de ejemplos de entrenamiento")
@@ -26,9 +31,13 @@ def read_dataset():
     # Extracción de los textos en arreglos de numpy
     X = dataset['text'].to_numpy()
     # Extracción de las etiquetas o clases de entrenamiento
-    Y = dataset['klass'].to_numpy()
+    Y_text = dataset['klass'].to_numpy()
     # Estracción de kis ID (Aún no usado).
     # ID = dataset['id'].to_numpy()
+    # Convertir etiquetas texto → números
+    encoder = LabelEncoder()
+    Y = encoder.fit_transform(Y_text)
+
     return X,Y
 
 """Normalización de datos"""
@@ -162,14 +171,19 @@ def create_minibatches(X, Y, batch_size):
 
 """codificasión de la salida onehot"""
 
-def salida_onehot(Y_train,Y_test,Y_val,NUM_CLASSES = 2):
+def salida_onehot(Y_train, Y_test, Y_val, NUM_CLASSES=3):
     
-    # Codificación de la salida onehot
-    Y_train_one_hot = nn.functional.one_hot(torch.from_numpy(Y_train), num_classes=NUM_CLASSES).float()
-    Y_test_one_hot = nn.functional.one_hot(torch.from_numpy(Y_test), num_classes=NUM_CLASSES).float()
-    Y_val_one_hot = nn.functional.one_hot(torch.from_numpy(Y_val), num_classes=NUM_CLASSES).float()
+    # Convertimos a long (int64)
+    Y_train = torch.from_numpy(Y_train).long()
+    Y_test  = torch.from_numpy(Y_test).long()
+    Y_val   = torch.from_numpy(Y_val).long()
+
+    # Codificación one-hot
+    Y_train_one_hot = nn.functional.one_hot(Y_train, num_classes=NUM_CLASSES).float()
+    Y_test_one_hot  = nn.functional.one_hot(Y_test,  num_classes=NUM_CLASSES).float()
+    Y_val_one_hot   = nn.functional.one_hot(Y_val,   num_classes=NUM_CLASSES).float()
     
-    return Y_train_one_hot, Y_test_one_hot, Y_val_one_hot  
+    return Y_train_one_hot, Y_test_one_hot, Y_val_one_hot
 
 """Definicion de la arquitectura"""
 
@@ -256,9 +270,13 @@ class MLP(nn.Module):
         # Nota la última capa de salida 'output' no se activa debido a que CrossEntropyLoss usa LogSoftmax internamente. 
         return x
     
+"""One-Hot"""
+def one_hot_encode(y, num_classes=3):
+    return np.eye(num_classes)[y]
+    
 """Entrenamiento de la red neuronal"""
 
-def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learning_rate=0.01,batch_size=128):
+def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learning_rate=0.001,batch_size=128):
     # Establecer los parámetros de la red
 
     # Parámetros de la red
@@ -289,8 +307,8 @@ def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learnin
     # Mean Square Error (MSE)
     # criterion = nn.MSELoss()
     # criterion = nn.BCELoss()
-    weights = torch.tensor([2.5, 1.0]) 
-    criterion = nn.CrossEntropyLoss(weight=weights) 
+    # weights = torch.tensor([2.5, 1.0]) 
+    criterion = nn.CrossEntropyLoss() 
 
     # Definir el optimizador
     #Parámetros del optimizador: parámetros del modelo y learning rate 
@@ -301,6 +319,7 @@ def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learnin
     # Entrenamiento
     print("Iniciando entrenamiento en PyTorch")
 
+    loss_history = []
 
     for epoch in range(epochs):
         # Poner el modelo en modo de entrenamiento
@@ -315,6 +334,7 @@ def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learnin
             
             # Propagación hacia adelante
             y_pred = model(X_tr)  #invoca al método forward de la clase MLP
+
             # Calcular el error MSE
             loss = criterion(y_pred, y_tr)
             #Acumular el error 
@@ -328,8 +348,11 @@ def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learnin
             optimizer.step()
             if np.random.random() < 0.1:
                 print(f"Batch Error : {loss.item()}")
-
+        
+        epoch_loss = lossTotal / len(dataloader)
         print(f"Época {epoch+1}/{epochs}, Pérdida: {lossTotal/len(dataloader)}")
+
+        loss_history.append(epoch_loss)
 
         # Evalúa el modelo con el conjunto de validación
         model.eval()  # Establecer el modo del modelo a "evaluación"
@@ -344,6 +367,14 @@ def train_red_neuronal(X_train_tfidf,X_val_tfidf,output_size=2,epochs=50,learnin
             print("R=", recall_score(Y_val, y_pred, average='macro'))
             print("F1=", f1_score(Y_val, y_pred, average='macro'))
             print("Acc=", accuracy_score(Y_val, y_pred))
+    # --------- Gráfica ---------
+    plt.plot(loss_history)
+    plt.xlabel("Épocas")
+    plt.ylabel("Error (Loss)")
+    plt.title("Error vs Épocas")
+    plt.savefig("Error_vs_Epocas.jpg", dpi=300, bbox_inches='tight')
+    plt.close()
+
     return model
 
 """Evaluación"""
@@ -379,9 +410,30 @@ def evaluacion(X_test,vec_tfidf,Y_test,model):
     # classification_report y  matriz de confusión (métricas Precisión, Recall, F1-measaure, Accuracy)
 
 
-    print(confusion_matrix(Y_test, y_pred_test))
-    print(classification_report(Y_test, y_pred_test, digits=4, zero_division='warn'))
+    matriz_confucion = confusion_matrix(Y_test, y_pred_test)
 
+    plt.figure(figsize=(6,4))
+    sns.heatmap(matriz_confucion, annot=True, fmt='d', cmap='Blues')
+    plt.xlabel("Predicción")
+    plt.ylabel("Valor real")
+    plt.title("Matriz de Confusión")
+    plt.savefig("matriz_confucion.jpg", dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    
+    report = classification_report(Y_test, y_pred_test, digits=4, zero_division='warn', output_dict=True)
+
+    # Convertir a DataFrame
+    df_report = pd.DataFrame(report).T
+    # Quitar filas que no son clases (accuracy, macro avg, etc.) si quieres
+    df_classes = df_report.iloc[:-3, :3]  # precision, recall, f1-score
+    # Graficar
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(df_classes, annot=True, fmt=".2f")
+    plt.title("Classification Report Heatmap")
+    plt.savefig("classification_heatmap.jpg", dpi=300, bbox_inches='tight')
+    plt.close()
+    
 
 
 
@@ -391,19 +443,24 @@ if __name__ == "__main__":
     print("Empesando el entrenamiento....   ")
     # Leemos los datos del dataset.
     X, Y = read_dataset()
-
+    
+    # Aplicamos el One - Hot
+   # Y = one_hot_encode(y=Y, num_classes=3)
+    
     # Dividimos nuestro dataset.
-    Y_encoded = encode_labels(Y=Y)
+    #Y_encoded = encode_labels(Y=Y)
 
-    data_list_train, data_list_test = dataset_div(X,Y_encoded)
+    data_list_train, data_list_test = dataset_div(X,Y)
 
     #Separamos nuestros distintos datos
     X_train = data_list_train[0]
     X_val = data_list_train[1]
+
     Y_train = data_list_train[2]
     Y_val = data_list_train[3]
 
     X_test = data_list_test[0]
+    
     Y_test = data_list_test[1]
     
 
@@ -412,10 +469,14 @@ if __name__ == "__main__":
 
 
     # Sacamos la codificacion onehot  
-    Y_train_one_hot, Y_test_one_hot, Y_val_one_hot  = salida_onehot(Y_train=Y_train, Y_test=Y_test, Y_val=Y_val, NUM_CLASSES = 2) 
+    Y_train_one_hot, Y_test_one_hot, Y_val_one_hot  = salida_onehot(Y_train=Y_train, Y_test=Y_test, Y_val=Y_val, NUM_CLASSES = 3) 
 
     # Entrenamos nuestra red neuronal
-    model = train_red_neuronal(X_train_tfidf=X_train_tfidf,X_val_tfidf=X_val_tfidf,output_size=2,epochs=150,learning_rate=0.01,batch_size=128)
+    model = train_red_neuronal(X_train_tfidf=X_train_tfidf,
+                               X_val_tfidf=X_val_tfidf,
+                               output_size=3,epochs=150,
+                               learning_rate=0.1,
+                               batch_size=16)
 
     # Imprimimos nuetsra evaluación
     evaluacion(X_test=X_test, vec_tfidf=vec_tfidf, Y_test=Y_test, model=model)
